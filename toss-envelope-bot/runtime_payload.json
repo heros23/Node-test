@@ -1,0 +1,304 @@
+{
+  "status": "running",
+  "strategy": "엔벨로프 하단 반등",
+  "api_mode": "live",
+  "api_hint": "토스증권 API가 연결되면 예수금/보유자산/당월손익이 자동으로 채워집니다. Base URL은 실제 API endpoint여야 합니다.",
+  "account": {
+    "account_id": "기본계좌",
+    "mode": "live",
+    "cash": 2739,
+    "assets": 6721793,
+    "daily_pnl": -659990,
+    "return_rate": -0.0894,
+    "error": null,
+    "status_text": "실시간 계좌 스냅샷"
+  },
+  "mock_account": {
+    "account_id": "모의계좌",
+    "mode": "mock",
+    "cash": 10000000,
+    "assets": 10850000,
+    "daily_pnl": 850000,
+    "return_rate": 0.085,
+    "error": null,
+    "status_text": "모의투자 모드"
+  },
+  "holdings": [
+    {
+      "symbol": "A226950",
+      "name": "올릭스",
+      "quantity": 25,
+      "average_price": 159000,
+      "value": 4237500,
+      "side": "보유"
+    }
+  ],
+  "mock_holdings": [
+    {
+      "symbol": "A226950",
+      "name": "올릭스",
+      "quantity": 25,
+      "average_price": 159000,
+      "current_price": 167500,
+      "market_value": 4187500,
+      "pnl": 212500,
+      "side": "모의매수",
+      "kind": "mock"
+    },
+    {
+      "symbol": "A005930",
+      "name": "삼성전자",
+      "quantity": 2,
+      "average_price": 71000,
+      "current_price": 72300,
+      "market_value": 144600,
+      "pnl": 2600,
+      "side": "모의매수",
+      "kind": "mock"
+    }
+  ],
+  "order_preview": {
+    "symbol": "005930",
+    "side": "buy",
+    "quantity": 1,
+    "order_type": "market",
+    "timestamp": 0
+  },
+  "order_result": {
+    "mode": "live",
+    "accepted": false,
+    "error": "request_failed",
+    "payload": {
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "order_type": "market",
+      "timestamp": 0
+    }
+  },
+  "order_history": [
+    {
+      "timestamp": "2026-07-01T12:00:00+09:00",
+      "symbol": "005930",
+      "name": "삼성전자",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "demo",
+      "accepted": true
+    },
+    {
+      "timestamp": "2026-06-29T16:12:18.157383+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "demo",
+      "accepted": true
+    },
+    {
+      "timestamp": "2026-06-29T16:15:53.056819+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "demo",
+      "accepted": true
+    },
+    {
+      "timestamp": "2026-06-29T16:17:11.457789+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "demo",
+      "accepted": true
+    },
+    {
+      "timestamp": "2026-06-29T16:17:43.333147+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "demo",
+      "accepted": true
+    },
+    {
+      "timestamp": "2026-06-29T16:18:33.800231+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "demo",
+      "accepted": true
+    },
+    {
+      "timestamp": "2026-06-29T16:21:31.450419+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "demo",
+      "accepted": true
+    },
+    {
+      "timestamp": "2026-06-29T16:21:54.788940+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "demo",
+      "accepted": true
+    },
+    {
+      "timestamp": "2026-06-29T16:26:32.717429+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "demo",
+      "accepted": true
+    },
+    {
+      "timestamp": "2026-06-29T16:32:43.143713+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "demo",
+      "accepted": true
+    },
+    {
+      "timestamp": "2026-06-29T16:37:58.603806+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-06-29T16:41:18.303003+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-06-29T16:43:07.744426+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-06-29T16:48:04.485046+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-06-29T16:48:24.974960+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-06-30T12:09:56.308871+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-06-30T12:10:33.551625+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-06-30T12:10:52.266099+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-06-30T12:12:03.589946+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-07-01T10:50:03.588904+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-07-01T11:20:17.633486+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-07-01T11:20:18.876861+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-07-01T11:22:46.983808+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-07-01T11:32:59.517740+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-07-01T11:34:37.651748+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    },
+    {
+      "timestamp": "2026-07-01T11:37:21.182441+00:00",
+      "symbol": "005930",
+      "side": "buy",
+      "quantity": 1,
+      "mode": "live",
+      "accepted": false
+    }
+  ],
+  "positions": [
+    {
+      "symbol": "005930",
+      "side": "BUY",
+      "quantity": 1,
+      "value": 980000
+    },
+    {
+      "symbol": "000660",
+      "side": "BUY",
+      "quantity": 2,
+      "value": 540000
+    }
+  ]
+}

@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Toss Envelope Dashboard</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700&display=swap');
+
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f8fbff;
+      --text: #14213d;
+      --heading: #0f172a;
+      --muted: #5f6b7a;
+      --subtle: #334155;
+      --good: #3b82f6;
+      --bad: #3b82f6;
+      --accent: #2563eb;
+      --accent-soft: rgba(37,99,235,0.12);
+      --border: rgba(15,23,42,0.08);
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      --surface: #ffffff;
+      --surface-soft: #f8fbff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Pretendard', 'Toss Product Sans', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+      margin: 0;
+      padding: 24px;
+      background: linear-gradient(180deg, #f8fbff 0%, var(--bg) 100%);
+      color: var(--text);
+    }
+    h1 { margin: 0 0 8px; font-size: 30px; font-weight: 700; color: var(--heading); }
+    .subtitle { color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
+    label { display: block; color: var(--text); font-weight: 600; }
+    input, textarea, select {
+      color: var(--text);
+      background: var(--surface-soft);
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 18px;
+      border-radius: 20px;
+      margin-bottom: 16px;
+      backdrop-filter: blur(10px);
+    }
+    .card h2 { margin: 0 0 12px; font-size: 18px; font-weight: 700; color: var(--heading); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .metric {
+      background: var(--surface-soft);
+      border: 1px solid var(--border);
+      padding: 14px;
+      border-radius: 14px;
+      min-height: 92px;
+    }
+    .metric strong { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    .metric .value { font-size: 20px; font-weight: 700; }
+    .pill, .pill-btn {
+      display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(37,99,235,0.12); background: var(--accent-soft); color: #1d4ed8; font-size: 12px; font-weight: 600;
+    }
+    .pill-btn { cursor: pointer; }
+    .pill-btn.active { background: linear-gradient(135deg, var(--accent), #4f46e5); color: white; }
+    .sub-section { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .section-title { font-size: 14px; font-weight: 700; color: var(--heading); margin-bottom: 8px; }
+    .holdings-list { display: grid; gap: 8px; }
+    .holding-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-soft); border: 1px solid var(--border); }
+    .holding-item .name { font-weight: 700; color: var(--heading); }
+    .holding-item .meta { color: var(--muted); font-size: 12px; }
+    .holding-item .code { color: #2563eb; font-size: 12px; font-weight: 600; margin-top: 2px; }
+    .gain { color: var(--good); font-weight: 700; }
+    .loss { color: var(--bad); font-weight: 700; }
+    .order-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: var(--surface-soft);
+      margin-bottom: 10px;
+    }
+    .order-label { color: #2563eb; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+    .order-value { color: var(--subtle); font-size: 14px; margin-top: 3px; white-space: pre-wrap; }
+    .direction-buy { color: #ef4444; font-weight: 700; }
+    .direction-sell { color: #2563eb; font-weight: 700; }
+    .table-chip { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+    .empty { padding: 10px 12px; color: var(--muted); border-radius: 12px; background: var(--surface-soft); }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left; color: var(--text); }
+    th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+    tbody tr:hover { background: rgba(37,99,235,0.05); }
+    .good { color: var(--good); }
+    .bad { color: var(--bad); }
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(37,99,235,0.12);
+      color: #1d4ed8;
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+    .topbar {
+      display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px;
+    }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+    .tab {
+      background: #f8fbff; border: 1px solid var(--border); color: var(--text);
+      padding: 8px 12px; border-radius: 999px; cursor: pointer;
+    }
+    .tab.active { background: var(--accent); color: white; }
+    .theme-toggle, .refresh-btn {
+      border: 1px solid var(--border); background: #f8fbff; color: var(--text);
+      padding: 8px 12px; border-radius: 999px; cursor: pointer;
+    }
+    .chart-box {
+      height: 220px; border-radius: 12px; background: linear-gradient(180deg, rgba(96,165,250,0.18), rgba(255,255,255,0.02));
+      border: 1px solid var(--border); display: flex; align-items: flex-end; justify-content: space-around; padding: 12px; gap: 8px;
+    }
+    .bar { width: 18px; background: var(--accent); border-radius: 6px 6px 0 0; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div>
+      <h1>자동매매 대시보드</h1>
+      <div class="subtitle">엔벨로프 하단 반등 전략 기반의 백테스트와 운영 상태를 한눈에 확인합니다.</div>
+    </div>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <div class="tabs">
+        <button class="tab active" data-target="overview">Overview</button>
+        <button class="tab" data-target="strategy">Strategy</button>
+      </div>
+      <button class="refresh-btn" id="refresh-btn">↻ Refresh</button>
+      <button class="theme-toggle" id="theme-toggle">🌙 Dark</button>
+    </div>
+  </div>
+
+  <div id="overview-panel">
+    <div class="card">
+      <h2>계좌 현황</h2>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+        <button id="open-toss-login" style="padding:8px 12px; border-radius:999px; border:1px solid rgba(37,99,235,0.12); background: var(--accent-soft); color: #1d4ed8; cursor:pointer;">토스증권 로그인</button>
+        <button id="mock-toggle-inline" class="pill-btn">모의투자 모드 OFF</button>
+      </div>
+      <div id="mode-badge" class="pill">실전 계좌</div>
+      <div id="account" class="grid"></div>
+      <div class="sub-section">
+        <div class="section-title">보유 종목 현황</div>
+        <div id="holdings-list" class="holdings-list"></div>
+      </div>
+      <div id="account-status" style="margin-top:10px; color: var(--muted); font-size:13px;"></div>
+    </div>
+    <div class="card">
+      <h2>백테스트 결과 요약</h2>
+      <div id="backtest" class="grid"></div>
+    </div>
+    <div class="card">
+      <h2>운영 상태</h2>
+      <div id="runtime" class="grid"></div>
+    </div>
+    <div class="card">
+      <h2>API 설정</h2>
+      <div style="display:grid; gap:10px; max-width:460px;">
+        <label>Base URL
+          <input id="base-url" type="text" style="width:100%; margin-top:6px; padding:8px; border-radius:8px; border:1px solid var(--border); background: #f8fbff; color: var(--text);" />
+        </label>
+        <label>API Key
+          <input id="api-key" type="password" autocomplete="off" style="width:100%; margin-top:6px; padding:8px; border-radius:8px; border:1px solid var(--border); background: #f8fbff; color: var(--text);" />
+        </label>
+        <label>API Secret
+          <input id="api-secret" type="password" autocomplete="off" style="width:100%; margin-top:6px; padding:8px; border-radius:8px; border:1px solid var(--border); background: #f8fbff; color: var(--text);" />
+        </label>
+        <button id="save-credentials" style="padding:10px 12px; border-radius:999px; border:1px solid var(--border); background: var(--accent); color:white; cursor:pointer;">저장</button>
+        <button id="clear-credentials" style="padding:10px 12px; border-radius:999px; border:1px solid var(--border); background: #f8fbff; color: var(--text); cursor:pointer;">초기화</button>
+        <div id="config-status" style="color: var(--muted); font-size:13px;"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>LLM 전략 제안</h2>
+      <div id="llm-insight" class="metric"></div>
+      <ul id="llm-recommendations" style="margin:8px 0 0 18px; color: var(--muted);"></ul>
+    </div>
+    <div class="card">
+      <h2>학습 리포트</h2>
+      <a href="./learning_report.md" target="_blank" style="display:inline-block; margin-bottom:10px; color: var(--accent);">📄 리포트 열기</a>
+      <p id="learning-summary" style="margin:0 0 10px; color: var(--muted);"></p>
+      <h3 style="margin:10px 0 6px; font-size: 14px;">배운 점</h3>
+      <ul id="learning-lessons" style="margin:0 0 10px 18px; color: var(--muted);"></ul>
+      <h3 style="margin:10px 0 6px; font-size: 14px;">보완 방향</h3>
+      <ul id="learning-improvements" style="margin:0 0 10px 18px; color: var(--muted);"></ul>
+      <h3 style="margin:10px 0 6px; font-size: 14px;">다음 액션</h3>
+      <ul id="learning-next-actions" style="margin:0 0 10px 18px; color: var(--muted);"></ul>
+    </div>
+    <div class="card">
+      <h2>주문 미리보기</h2>
+      <pre id="order-preview" style="margin:0; white-space:pre-wrap; color: var(--muted);"></pre>
+    </div>
+    <div class="card">
+      <h2>주문 실행 결과</h2>
+      <pre id="order-result" style="margin:0; white-space:pre-wrap; color: var(--muted);"></pre>
+    </div>
+    <div class="card">
+      <h2>주문 이력</h2>
+      <div class="subtitle" style="margin-bottom:10px;">실제 주문 연결이 실패하면 현재는 거절된 것으로 표시됩니다.</div>
+      <table>
+        <thead>
+          <tr><th>시각</th><th>종목</th><th>방향</th><th>수량</th><th>상태</th></tr>
+        </thead>
+        <tbody id="order-history-table"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>포지션 목록</h2>
+      <table>
+        <thead>
+          <tr><th>종목</th><th>방향</th><th>수량</th><th>평가금액</th></tr>
+        </thead>
+        <tbody id="positions-table"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>수익률 히스토리</h2>
+      <div class="chart-box" id="chart"></div>
+    </div>
+  </div>
+
+  <div id="strategy-panel" class="hidden">
+    <div class="card">
+      <h2>전략 비교</h2>
+      <table>
+        <thead>
+          <tr><th>전략</th><th>총수익률</th><th>승률</th><th>최대낙폭</th><th>거래횟수</th></tr>
+        </thead>
+        <tbody id="strategy-table"></tbody>
+      </table>
+    </div>
+  </div>
+  <script>
+    async function loadConfig() {
+      try {
+        const response = await fetch('./config.json', { cache: 'no-store' });
+        if (!response.ok) return {};
+        return await response.json();
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function formatNumber(value) {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric.toLocaleString() : '0';
+    }
+
+    function formatRate(value) {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? `${(numeric * 100).toFixed(2)}%` : '0.00%';
+    }
+
+    function getStockName(item) {
+      const rawCode = item?.symbol || item?.stock_code || item?.code || 'N/A';
+      const code = String(rawCode);
+      const normalizedCode = code.replace(/^A/, '');
+      const nameMap = {
+        '005930': '삼성전자',
+        'A005930': '삼성전자',
+        '000660': 'SK하이닉스',
+        'A000660': 'SK하이닉스',
+        '226950': '올릭스',
+        'A226950': '올릭스',
+      };
+      return item?.name || item?.stock_name || item?.stockName || nameMap[code] || nameMap[normalizedCode] || '종목명 없음';
+    }
+
+    Promise.all([
+      fetch('./dashboard_data.json', { cache: 'no-store' }).then((res) => res.json()),
+      fetch('./runtime_payload.json', { cache: 'no-store' }).then((res) => res.json()).catch(() => ({ status: 'not-ready' })),
+      loadConfig()
+    ]).then(([data, runtime, config]) => {
+        const account = document.getElementById('account');
+        const backtest = document.getElementById('backtest');
+        const strategyTable = document.getElementById('strategy-table');
+        const runtimeBox = document.getElementById('runtime');
+        const llmInsight = document.getElementById('llm-insight');
+        const llmRecommendations = document.getElementById('llm-recommendations');
+        const baseUrlInput = document.getElementById('base-url');
+        const apiKeyInput = document.getElementById('api-key');
+        const apiSecretInput = document.getElementById('api-secret');
+        const saveCredentialsButton = document.getElementById('save-credentials');
+        const clearCredentialsButton = document.getElementById('clear-credentials');
+        const configStatus = document.getElementById('config-status');
+        const orderPreview = document.getElementById('order-preview');
+        const orderResult = document.getElementById('order-result');
+        const orderHistoryTable = document.getElementById('order-history-table');
+        const accountStatus = document.getElementById('account-status');
+        const openTossLoginButton = document.getElementById('open-toss-login');
+        const mockToggleInlineButton = document.getElementById('mock-toggle-inline');
+        const modeBadge = document.getElementById('mode-badge');
+        const holdingsList = document.getElementById('holdings-list');
+        const learningSummary = document.getElementById('learning-summary');
+        const learningLessons = document.getElementById('learning-lessons');
+        const learningImprovements = document.getElementById('learning-improvements');
+        const learningNextActions = document.getElementById('learning-next-actions');
+        const chart = document.getElementById('chart');
+        const positionsTable = document.getElementById('positions-table');
+
+        const mockModeEnabled = (config?.mock_mode ?? (localStorage.getItem('mock-mode') === 'true')) === true;
+        const accountSource = mockModeEnabled ? (runtime.mock_account || runtime.account || data.account) : (runtime.account || data.account);
+        const holdingsSource = mockModeEnabled ? (runtime.mock_holdings || runtime.holdings || runtime.positions || []) : (runtime.holdings || runtime.positions || []);
+        const emptyHoldingsMessage = mockModeEnabled
+          ? '모의투자 모드에서는 모의매수한 종목만 표시됩니다.'
+          : '실제 계좌에서 조회된 보유 종목이 없습니다. 토스 계좌 연동이 완료되면 이곳에 표시됩니다.';
+        const accountSummary = {
+          cash: accountSource?.cash ?? data.account.cash,
+          assets: accountSource?.assets ?? data.account.assets,
+          daily_pnl: accountSource?.daily_pnl ?? data.account.daily_pnl,
+          return_rate: accountSource?.return_rate ?? data.account.return_rate,
+          mode: accountSource?.mode || 'demo',
+          account_id: accountSource?.account_id || 'demo-account',
+          error: accountSource?.error,
+          status_text: accountSource?.status_text,
+        };
+        const accountSuffix = accountSummary.error ? ' (데모값)' : '';
+        account.innerHTML = [
+          ['예수금', `${formatNumber(accountSummary.cash)}원${accountSuffix}`],
+          ['보유 자산', `${formatNumber(accountSummary.assets)}원${accountSuffix}`],
+          ['당일 손익', `${formatNumber(accountSummary.daily_pnl)}원${accountSuffix}`],
+          ['수익률', `${formatRate(accountSummary.return_rate)}${accountSuffix}`],
+        ].map(([label, value]) => `<div class="metric"><strong>${label}</strong><div>${value}</div></div>`).join('');
+        const modeLabel = mockModeEnabled ? '모의투자 모드' : '실전 계좌';
+        const modeBadgeText = accountSummary.status_text || modeLabel;
+        modeBadge.textContent = modeBadgeText;
+        mockToggleInlineButton.textContent = mockModeEnabled ? '모의투자 모드 ON' : '모의투자 모드 OFF';
+        mockToggleInlineButton.classList.toggle('active', mockModeEnabled);
+        const visibleHoldings = (holdingsSource || []).filter((item) => {
+          if (!mockModeEnabled) return true;
+          return item.kind === 'mock' || item.side === '모의매수' || item.mode === 'mock';
+        });
+        holdingsList.innerHTML = visibleHoldings.length ? visibleHoldings.map((item) => {
+          const code = item.symbol || item.stock_code || item.code || 'N/A';
+          const name = getStockName(item);
+          const quantity = Number(item.quantity || 0);
+          const avgPrice = Number(item.average_price || item.avg_price || 0);
+          const currentPrice = Number(item.current_price ?? item.price ?? item.market_price ?? (item.market_value ? item.market_value / Math.max(quantity, 1) : avgPrice));
+          const investedAmount = quantity * avgPrice;
+          const marketValue = Number(item.market_value ?? item.value ?? quantity * currentPrice);
+          const pnl = Number(item.pnl ?? item.unrealized_pnl ?? item.daily_pnl ?? (marketValue - investedAmount));
+          const pnlClass = pnl >= 0 ? 'gain' : 'loss';
+          const pnlText = `${pnl >= 0 ? '+' : ''}${formatNumber(pnl)}원`;
+          const entryLabel = mockModeEnabled ? '모의매수' : (item.side || '보유');
+          return `
+            <div class="holding-item">
+              <div>
+                <div class="name">${name}</div>
+                <div class="code">${code}</div>
+                <div class="meta">수량 ${quantity}개 · 평균가 ${formatNumber(avgPrice)}원 · 현재가 ${formatNumber(currentPrice)}원</div>
+              </div>
+              <div style="text-align:right;">
+                <div>${formatNumber(marketValue)}원</div>
+                <div class="${pnlClass}">평가손익 ${pnlText}</div>
+                <div class="meta">${entryLabel}</div>
+              </div>
+            </div>
+          `;
+        }).join('') : `<div class="empty">${emptyHoldingsMessage}</div>`;
+        const failureMessage = accountSummary.error ? ` | 오류: ${accountSummary.error}` : '';
+        accountStatus.textContent = `계좌: ${accountSummary.account_id || '연동 실패'} / 모드: ${modeLabel}${failureMessage}`;
+        if (accountSummary.error) {
+          accountStatus.textContent += ' | 실제 계좌 연동은 토스증권 로그인 세션 또는 공식 API 권한이 필요합니다.';
+        }
+
+        backtest.innerHTML = [
+          ['총 수익률', `${(data.backtest.total_return * 100).toFixed(1)}%`],
+          ['연환산 수익률', `${(data.backtest.annualized_return * 100).toFixed(1)}%`],
+          ['샤프 지수', data.backtest.sharpe.toFixed(2)],
+          ['최대 낙폭', `${(data.backtest.max_drawdown * 100).toFixed(1)}%`],
+        ].map(([label, value]) => `<div class="metric"><strong>${label}</strong><div>${value}</div></div>`).join('');
+
+        strategyTable.innerHTML = data.strategies.map((s) => `
+          <tr>
+            <td>${s.name}</td>
+            <td>${(s.total_return * 100).toFixed(1)}%</td>
+            <td>${(s.win_rate * 100).toFixed(0)}%</td>
+            <td>${(s.max_drawdown * 100).toFixed(1)}%</td>
+            <td>${s.trade_count}</td>
+          </tr>
+        `).join('');
+
+        runtimeBox.innerHTML = [
+          ['상태', runtime.status || 'not-ready'],
+          ['전략', runtime.strategy || 'n/a'],
+          ['API 모드', runtime.api_mode || 'demo'],
+          ['계좌', runtime.account?.account_id || 'demo'],
+          ['보유 포지션', (runtime.positions || []).length],
+        ].map(([label, value]) => `<div class="metric"><strong>${label}</strong><div class="value">${value}</div></div>`).join('');
+
+        llmInsight.innerHTML = `<strong>모드</strong><div class="value">${data.llm?.mode || 'fallback'}</div>`;
+        llmRecommendations.innerHTML = (data.llm?.recommendations || []).map((item) => `<li>${item}</li>`).join('');
+        const renderOrderSummary = (payload, title) => {
+          if (!payload || Object.keys(payload).length === 0) {
+            return `<div class="empty">${title}가 아직 없습니다.</div>`;
+          }
+          const rows = Object.entries(payload).map(([key, value]) => {
+            const renderedValue = typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : String(value);
+            return `<div class="order-card"><div class="order-label">${key}</div><div class="order-value">${renderedValue}</div></div>`;
+          });
+          return `<div style="display:grid; gap:8px;">${rows.join('')}</div>`;
+        };
+
+        orderPreview.innerHTML = renderOrderSummary(runtime.order_preview || {}, '주문 미리보기');
+        orderResult.innerHTML = renderOrderSummary(runtime.order_result || {}, '주문 실행 결과');
+        orderHistoryTable.innerHTML = (runtime.order_history || []).slice(-5).reverse().map((item) => {
+          const side = String(item.side || '').toLowerCase();
+          const sideClass = side === 'sell' ? 'direction-sell' : 'direction-buy';
+          const code = item.symbol || item.stock_code || item.code || 'N/A';
+          const name = getStockName(item);
+          const rawTime = item.timestamp || '';
+          const parsedTime = rawTime ? new Date(rawTime) : null;
+          const displayTime = parsedTime && !Number.isNaN(parsedTime.getTime())
+            ? parsedTime.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/\s/g, ' ')
+            : rawTime;
+          const statusText = item.accepted ? '성공' : '거절';
+          const statusClass = item.accepted ? 'good' : 'bad';
+          return `
+            <tr>
+              <td>${displayTime}</td>
+              <td>${name} <span style="color:#93c5fd;">(${code})</span></td>
+              <td><span class="${sideClass}">${(item.side || '').toUpperCase()}</span></td>
+              <td>${item.quantity || 0}</td>
+              <td><span class="${statusClass}">${statusText}</span></td>
+            </tr>
+          `;
+        }).join('');
+        baseUrlInput.value = config?.base_url || data.config?.base_url || '';
+        apiKeyInput.value = config?.api_key || data.config?.api_key || '';
+        apiSecretInput.value = config?.api_secret || data.config?.api_secret || '';
+        learningSummary.textContent = data.learning_report?.summary || '리포트가 아직 준비되지 않았습니다.';
+        learningLessons.innerHTML = (data.learning_report?.lessons || []).map((item) => `<li>${item}</li>`).join('');
+        learningImprovements.innerHTML = (data.learning_report?.improvements || []).map((item) => `<li>${item}</li>`).join('');
+        learningNextActions.innerHTML = (data.learning_report?.next_actions || []).map((item) => `<li>${item}</li>`).join('');
+
+        positionsTable.innerHTML = (runtime.positions || []).length ? (runtime.positions || []).map((p) => {
+          const code = p.symbol || p.stock_code || p.code || 'N/A';
+          const name = getStockName(p);
+          const side = String(p.side || 'N/A').toUpperCase();
+          const sideClass = side === 'SELL' ? 'direction-sell' : 'direction-buy';
+          return `
+            <tr>
+              <td>${name} <span style="color:#93c5fd;">(${code})</span></td>
+              <td><span class="${sideClass}">${side}</span></td>
+              <td>${p.quantity || 0}</td>
+              <td>${(p.value || 0).toLocaleString()}원</td>
+            </tr>
+          `;
+        }).join('') : '<tr><td colspan="4">보유 포지션이 없습니다.</td></tr>';
+
+        const chartValues = [40, 58, 72, 64, 81, 90];
+        chart.innerHTML = chartValues.map((h) => `<div class="bar" style="height:${h}%"></div>`).join('');
+
+        document.querySelectorAll('.tab').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab').forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+            const target = btn.getAttribute('data-target');
+            document.getElementById('overview-panel').classList.toggle('hidden', target !== 'overview');
+            document.getElementById('strategy-panel').classList.toggle('hidden', target !== 'strategy');
+          });
+        });
+
+        document.getElementById('refresh-btn').addEventListener('click', () => {
+          window.location.reload();
+        });
+
+        openTossLoginButton.addEventListener('click', () => {
+          window.open('https://www.tossinvest.com/signin?redirectUrl=%2Faccount', '_blank', 'noopener,noreferrer');
+        });
+
+        mockToggleInlineButton.addEventListener('click', async () => {
+          const nextState = localStorage.getItem('mock-mode') !== 'true';
+          localStorage.setItem('mock-mode', String(nextState));
+          const payload = {
+            base_url: baseUrlInput.value,
+            api_key: apiKeyInput.value,
+            api_secret: apiSecretInput.value,
+            mock_mode: nextState,
+          };
+          await fetch('./save_config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          window.location.reload();
+        });
+
+        saveCredentialsButton.addEventListener('click', async () => {
+          const payload = {
+            base_url: baseUrlInput.value,
+            api_key: apiKeyInput.value,
+            api_secret: apiSecretInput.value,
+          };
+          if (!payload.api_key || !payload.api_secret) {
+            configStatus.textContent = 'API Key와 API Secret를 모두 입력해 주세요.';
+            return;
+          }
+          const response = await fetch('./save_config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const result = await response.json();
+          configStatus.textContent = `${result.message || '설정이 저장되었습니다.'} (모드: ${payload.api_key && payload.api_secret ? 'live-ready' : 'demo'})`;
+
+          const refreshResponse = await fetch('./runtime_payload.json', { cache: 'no-store' });
+          if (refreshResponse.ok) {
+            const refreshed = await refreshResponse.json();
+            baseUrlInput.value = payload.base_url;
+            apiKeyInput.value = payload.api_key;
+            apiSecretInput.value = payload.api_secret;
+            runtimeBox.innerHTML = [
+              ['상태', refreshed.status || 'not-ready'],
+              ['전략', refreshed.strategy || 'n/a'],
+              ['API 모드', refreshed.api_mode || 'demo'],
+              ['계좌', refreshed.account?.account_id || 'demo'],
+              ['보유 포지션', (refreshed.positions || []).length],
+            ].map(([label, value]) => `<div class="metric"><strong>${label}</strong><div class="value">${value}</div></div>`).join('');
+            const refreshedAccount = refreshed.account || {};
+            const refreshedHasData = Boolean(refreshedAccount.cash || refreshedAccount.assets || refreshedAccount.daily_pnl || refreshedAccount.return_rate !== undefined);
+            const refreshedSuffix = refreshedAccount.error ? ' (데모값)' : '';
+            account.innerHTML = [
+              ['예수금', `${formatNumber(refreshedAccount.cash || 0)}원${refreshedSuffix}`],
+              ['보유 자산', `${formatNumber(refreshedAccount.assets || 0)}원${refreshedSuffix}`],
+              ['당일 손익', `${formatNumber(refreshedAccount.daily_pnl || 0)}원${refreshedSuffix}`],
+              ['수익률', `${formatRate(refreshedAccount.return_rate || 0)}${refreshedSuffix}`],
+            ].map(([label, value]) => `<div class="metric"><strong>${label}</strong><div>${value}</div></div>`).join('');
+            const refreshedFailureMessage = refreshedAccount.error ? ` | 오류: ${refreshedAccount.error}` : '';
+            accountStatus.textContent = `계좌: ${refreshedAccount.account_id || 'demo-account'} / 모드: ${refreshedAccount.mode || 'demo'}${refreshedFailureMessage}`;
+            orderPreview.innerHTML = renderOrderSummary(refreshed.order_preview || {}, '주문 미리보기');
+            orderResult.innerHTML = renderOrderSummary(refreshed.order_result || {}, '주문 실행 결과');
+            orderHistoryTable.innerHTML = (refreshed.order_history || []).slice(-5).reverse().map((item) => {
+              const side = String(item.side || '').toLowerCase();
+              const sideClass = side === 'sell' ? 'direction-sell' : 'direction-buy';
+              const code = item.symbol || item.stock_code || item.code || 'N/A';
+              const name = getStockName(item);
+              return `
+                <tr>
+                  <td>${item.timestamp || ''}</td>
+                  <td>${name} <span style="color:#93c5fd;">(${code})</span></td>
+                  <td><span class="${sideClass}">${(item.side || '').toUpperCase()}</span></td>
+                  <td>${item.quantity || 0}</td>
+                  <td>${item.accepted ? 'accepted' : 'rejected'}</td>
+                </tr>
+              `;
+            }).join('');
+            positionsTable.innerHTML = (refreshed.positions || []).length ? (refreshed.positions || []).map((p) => {
+              const code = p.symbol || p.stock_code || p.code || 'N/A';
+              const name = getStockName(p);
+              const side = String(p.side || 'N/A').toUpperCase();
+              const sideClass = side === 'SELL' ? 'direction-sell' : 'direction-buy';
+              return `
+                <tr>
+                  <td>${name} <span style="color:#93c5fd;">(${code})</span></td>
+                  <td><span class="${sideClass}">${side}</span></td>
+                  <td>${p.quantity || 0}</td>
+                  <td>${(p.value || 0).toLocaleString()}원</td>
+                </tr>
+              `;
+            }).join('') : '<tr><td colspan="4">보유 포지션이 없습니다.</td></tr>';
+          }
+        });
+
+        clearCredentialsButton.addEventListener('click', async () => {
+          baseUrlInput.value = '';
+          apiKeyInput.value = '';
+          apiSecretInput.value = '';
+          const response = await fetch('./save_config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ base_url: '', api_key: '', api_secret: '' }),
+          });
+          const result = await response.json();
+          configStatus.textContent = result.message || '설정이 초기화되었습니다.';
+        });
+
+        const refreshDashboard = async () => {
+          try {
+            const [data, runtime, config] = await Promise.all([
+              fetch('./dashboard_data.json', { cache: 'no-store' }).then((res) => res.json()),
+              fetch('./runtime_payload.json', { cache: 'no-store' }).then((res) => res.json()).catch(() => ({ status: 'not-ready' })),
+              loadConfig()
+            ]);
+            const accountSummary = {
+              cash: runtime.account?.cash ?? data.account.cash,
+              assets: runtime.account?.assets ?? data.account.assets,
+              daily_pnl: runtime.account?.daily_pnl ?? data.account.daily_pnl,
+              return_rate: runtime.account?.return_rate ?? data.account.return_rate,
+              mode: runtime.account?.mode || 'demo',
+              account_id: runtime.account?.account_id || 'demo-account',
+            };
+            const accountHasData = Boolean(accountSummary.cash || accountSummary.assets || accountSummary.daily_pnl || accountSummary.return_rate !== undefined);
+            const accountSuffix = accountSummary.error ? ' (데모값)' : '';
+            account.innerHTML = [
+              ['예수금', `${formatNumber(accountSummary.cash)}원${accountSuffix}`],
+              ['보유 자산', `${formatNumber(accountSummary.assets)}원${accountSuffix}`],
+              ['당일 손익', `${formatNumber(accountSummary.daily_pnl)}원${accountSuffix}`],
+              ['수익률', `${formatRate(accountSummary.return_rate)}${accountSuffix}`],
+            ].map(([label, value]) => `<div class="metric"><strong>${label}</strong><div>${value}</div></div>`).join('');
+            const failureMessage = runtime.account?.error ? ` | 오류: ${runtime.account.error}` : '';
+            accountStatus.textContent = `계좌: ${accountSummary.account_id} / 모드: ${accountSummary.mode}${failureMessage}`;
+            baseUrlInput.value = config?.base_url || data.config?.base_url || '';
+            apiKeyInput.value = config?.api_key || data.config?.api_key || '';
+            apiSecretInput.value = config?.api_secret || data.config?.api_secret || '';
+          } catch (error) {
+            accountStatus.textContent = '계좌 상태를 갱신하지 못했습니다.';
+          }
+        };
+
+        setInterval(refreshDashboard, 5000);
+
+        const themeToggle = document.getElementById('theme-toggle');
+        let dark = true;
+        const applyTheme = (isDark) => {
+          document.documentElement.style.setProperty('--bg', isDark ? '#07111f' : '#f5f7fb');
+          document.documentElement.style.setProperty('--panel', isDark ? '#121b2d' : '#ffffff');
+          document.documentElement.style.setProperty('--panel-2', isDark ? '#18253c' : '#f8fbff');
+          document.documentElement.style.setProperty('--text', isDark ? '#f8fafc' : '#14213d');
+          document.documentElement.style.setProperty('--heading', isDark ? '#f8fafc' : '#0f172a');
+          document.documentElement.style.setProperty('--muted', isDark ? '#94a3b8' : '#5f6b7a');
+          document.documentElement.style.setProperty('--subtle', isDark ? '#e2e8f0' : '#334155');
+          document.documentElement.style.setProperty('--border', isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)');
+          document.documentElement.style.setProperty('--surface', isDark ? '#0f172a' : '#ffffff');
+          document.documentElement.style.setProperty('--surface-soft', isDark ? '#111827' : '#f8fbff');
+          document.documentElement.style.setProperty('--accent', isDark ? '#60a5fa' : '#2563eb');
+          document.documentElement.style.setProperty('--accent-soft', isDark ? 'rgba(96,165,250,0.16)' : 'rgba(37,99,235,0.12)');
+          document.documentElement.style.setProperty('--shadow', isDark ? '0 16px 36px rgba(2,8,23,0.28)' : '0 10px 30px rgba(15,23,42,0.08)');
+          themeToggle.textContent = isDark ? '🌙 Dark' : '☀️ Light';
+        };
+        themeToggle.addEventListener('click', () => {
+          dark = !dark;
+          applyTheme(dark);
+        });
+        applyTheme(dark);
+      });
+  </script>
+</body>
+</html>
