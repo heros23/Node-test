@@ -30,9 +30,35 @@
       "quantity": 25,
       "average_price": 159000,
       "value": 4237500,
-      "side": "보유"
+      "side": "보유",
+      "currency": "KRW"
+    },
+    {
+      "symbol": "하이브",
+      "quantity": 200,
+      "average_price": 208500,
+      "currency": "KRW",
+      "side": "보유",
+      "name": "하이브"
+    },
+    {
+      "symbol": "펄어비스",
+      "quantity": 500,
+      "average_price": 37440,
+      "currency": "KRW",
+      "side": "보유",
+      "name": "펄어비스"
+    },
+    {
+      "symbol": "LG전자",
+      "quantity": 1000,
+      "average_price": 189000,
+      "currency": "KRW",
+      "side": "보유",
+      "name": "LG전자"
     }
   ],
+  "us_holdings": [],
   "mock_holdings": [
     {
       "symbol": "A226950",
