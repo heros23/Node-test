@@ -12,6 +12,16 @@ from datetime import datetime, timedelta
 import threading
 import os
 import json
+import sys
+import re
+
+# Add project root to sys.path so src.* imports work when running from this folder
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from src.config_store import apply_config_to_environment, load_config
+from src.broker_client import BrokerClient
 
 app = Flask(__name__, static_folder='.', static_url_path='')
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
@@ -98,6 +108,163 @@ def get_sector(market_key: str, ticker: str) -> str:
         if base in stocks or ticker in stocks:
             return sec
     return "기타"
+
+
+# ─── 티커 변환/해석 ─────────────────────────────────────────────────────────
+
+# 간단한 종목명 매핑 (한국 종목 코드/명칭 → 티커)
+_KOREAN_NAME_MAP = {
+    "삼성전자": "005930", "SK하이닉스": "000660", "LG에너지솔루션": "373220",
+    "삼성바이오로직스": "207940", "현대차": "005380", "셀트리온": "068270",
+    "기아": "000270", "POSCO홀딩스": "005490", "삼성SDI": "006400",
+    "NAVER": "035420", "카카오": "035720", "한국전력": "015760",
+    "현대모비스": "012330", "LG화학": "051910", "삼성전자우": "005935",
+    "SK이노베이션": "096770", "KB금융": "105560", "신한지주": "055550",
+    "하나금융지주": "086790", "삼성생명": "032830", "삼성화재": "000810",
+    "CJ제일제당": "097950", "아모레퍼시픽": "090430", "LG생활건강": "051900",
+    "카카오뱅크": "323410", "크래프톤": "259960", "현대중공업": "329180",
+    "두산에너빌리티": "034020", "SK텔레콤": "017670", "LG전자": "066570",
+    "SK": "034730", "한화에어로스페이스": "012450", "삼성중공업": "010140",
+    "현대제철": "004020", "S-Oil": "010950", "GS칼텍스": "007070",
+    "SK바이오팜": "326030", "삼성엔지니어링": "028050", "대한항공": "003490",
+    "HMM": "011200", "LG": "003550", "KT": "030200", "삼성SDS": "018260",
+    "현대건설": "000720", "메리츠금융지주": "138040", "키움증권": "039490",
+    "신세계": "004170", "현대로템": "064350",
+}
+
+# 영문 종목명 매핑 (S&P500 일부)
+_ENGLISH_NAME_MAP = {
+    "APPLE": "AAPL", "MICROSOFT": "MSFT", "NVIDIA": "NVDA", "ALPHABET": "GOOGL",
+    "GOOGLE": "GOOGL", "AMAZON": "AMZN", "TESLA": "TSLA", "META": "META",
+    "BERKSHIRE": "BRK-B", "UNITEDHEALTH": "UNH", "JOHNSON": "JNJ", "JPMORGAN": "JPM",
+    "VISA": "V", "MASTERCARD": "MA", "EXXON": "XOM", "CHEVRON": "CVX",
+    "LILLY": "LLY", "PROCTER": "PG", "COCA-COLA": "KO", "PEPSICO": "PEP",
+    "WALMART": "WMT", "MCDONALD": "MCD", "DISNEY": "DIS", "NETFLIX": "NFLX",
+    "BOEING": "BA", "INTEL": "INTC", "AMD": "AMD", "QUALCOMM": "QCOM",
+    "CISCO": "CSCO", "VERIZON": "VZ", "AT&T": "T", "HOME-DEPOT": "HD",
+    "BANK-OF-AMERICA": "BAC", "WELLS-FARGO": "WFC", "GOLDMAN-SACHS": "GS",
+    "MORGAN-STANLEY": "MS", "CITIGROUP": "C", "PAYPAL": "PYPL", "ADOBE": "ADBE",
+    "SALESFORCE": "CRM", "ORACLE": "ORCL", "IBM": "IBM", "SHELL": "SHEL",
+    "TOYOTA": "TM", "UNILEVER": "UL", "NESTLE": "NESN", "TSMC": "TSM",
+}
+
+# 코드/티커 → 종목명 역매핑
+_KOREAN_NAME_MAP_REV = {v: k for k, v in _KOREAN_NAME_MAP.items()}
+_KOREAN_NAME_MAP_LOOKUP = {re.sub(r"\s+", "", k).upper(): v for k, v in _KOREAN_NAME_MAP.items()}
+_ENGLISH_NAME_MAP_REV = {v: k for k, v in _ENGLISH_NAME_MAP.items()}
+_DISPLAY_NAME_CACHE: dict[str, str] = {}
+_display_name_lock = threading.Lock()
+
+
+def _fallback_stock_name(market_key: str, base: str) -> str:
+    """하드코딩 매핑 기반 최후 fallback 이름."""
+    if market_key in ("KOSPI", "KOSDAQ"):
+        return _KOREAN_NAME_MAP_REV.get(base) or _ENGLISH_NAME_MAP_REV.get(base) or base
+    return _ENGLISH_NAME_MAP_REV.get(base) or _KOREAN_NAME_MAP_REV.get(base) or base
+
+
+def _extract_company_name(payload: dict) -> str | None:
+    """yfinance 메타데이터에서 종목명을 우선순위대로 추출."""
+    for key in ("longName", "shortName", "displayName", "name"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _lookup_korean_code(query: str) -> str | None:
+    """공백/영문 대소문자를 무시하고 한국 종목명을 코드로 조회."""
+    normalized = re.sub(r"\s+", "", query).upper()
+    return _KOREAN_NAME_MAP_LOOKUP.get(normalized)
+
+
+def get_stock_name(market_key: str, ticker: str) -> str:
+    """풀 티커/코드를 종목명으로 변환. 가능하면 실제 회사명을 조회하고, 실패 시 fallback 사용."""
+    suffix = MARKETS.get(market_key, {}).get("suffix", "")
+    base = ticker.replace(suffix, "") if suffix else ticker
+
+    # 한국 종목은 하드코딩된 한글명이 있으면 우선 사용
+    mapped_korean_name = _KOREAN_NAME_MAP_REV.get(base)
+    if mapped_korean_name:
+        return mapped_korean_name
+
+    cache_key = f"{market_key}:{base}"
+    with _display_name_lock:
+        cached_name = _DISPLAY_NAME_CACHE.get(cache_key)
+    if cached_name:
+        return cached_name
+
+    resolved_name = None
+    full_ticker = ticker if suffix and ticker.endswith(suffix) else (base + suffix if suffix else base)
+    try:
+        resolved_name = _extract_company_name(yf.Ticker(full_ticker).get_history_metadata() or {})
+    except Exception:
+        resolved_name = None
+
+    if not resolved_name:
+        try:
+            resolved_name = _extract_company_name(yf.Ticker(full_ticker).info or {})
+        except Exception:
+            resolved_name = None
+
+    if not resolved_name:
+        resolved_name = _fallback_stock_name(market_key, base)
+
+    with _display_name_lock:
+        _DISPLAY_NAME_CACHE[cache_key] = resolved_name
+    return resolved_name
+
+
+def normalize_ticker_input(market_key: str, query: str) -> str | None:
+    """
+    사용자 입력(query)을 yfinance용 풀 티커로 변환.
+    - 입력이 없으면 None
+    - 6자리 숫자 코드(KOSPI/KOSDAQ) → suffix(.KS/.KQ) 추가
+    - 종목명(한글/영문) → 코드 매핑 → 풀 티커
+    - 이미 풀 티커면 그대로 반환
+    - US 티커는 대문자로 반환
+    """
+    query = query.strip().upper()
+    if not query:
+        return None
+
+    m = MARKETS.get(market_key, {})
+    suffix = m.get("suffix", "")
+
+    # 1. US: 영문 종목명 매핑을 먼저 시도, 그 후 티커 그대로 반환
+    if market_key == "US":
+        mapped = _ENGLISH_NAME_MAP.get(query)
+        if mapped:
+            return mapped
+        if query.isalpha():
+            return query
+        return _ENGLISH_NAME_MAP.get(query, query)
+
+    # 2. 6자리 숫자면 종목코드 → suffix 추가
+    if re.fullmatch(r"\d{6}", query):
+        return query + suffix
+
+    # 3. 한글/영문 종목명 → 종목코드 변환
+    code = _lookup_korean_code(query)
+    if code:
+        return code + suffix
+
+    # 4. 영문명 매핑 시도
+    code = _ENGLISH_NAME_MAP.get(query)
+    if code:
+        return code + suffix
+
+    # 5. 이미 .KS/.KQ 붙은 풀 티커인지 확인
+    if query.endswith((".KS", ".KQ")):
+        return query
+
+    # 6. 그 외는 입력을 그대로 suffix 붙여 시도
+    return query + suffix
+
+
+def resolve_ticker(market_key: str, query: str) -> str | None:
+    """백테스트용: 종목명/코드/티커를 풀 티커로 해석."""
+    return normalize_ticker_input(market_key, query)
 
 
 # ─── 엔벨로프 계산 ────────────────────────────────────────────────────────
@@ -255,6 +422,146 @@ def fetch_snapshot(ticker: str, period: int, pct: float) -> dict:
         return None
 
 
+def run_market_scan(market: str, period: int = 20, pct: float = 5.0, universe_limit: int = 60) -> dict:
+    m = MARKETS.get(market)
+    if not m:
+        raise ValueError('unknown market')
+
+    tickers = get_all_tickers(market)[:max(1, int(universe_limit or 60))]
+    end = datetime.now()
+    start = end - timedelta(days=120)
+    results = []
+
+    raw = yf.download(tickers, start=start, end=end, auto_adjust=True, progress=False)
+    close_df = raw['Close'] if isinstance(raw.columns, pd.MultiIndex) else raw
+
+    for ticker in tickers:
+        try:
+            col = ticker if ticker in close_df.columns else None
+            if col is None:
+                continue
+            s = close_df[col].dropna()
+            if len(s) < period + 5:
+                continue
+            df = pd.DataFrame({'Close': s})
+            df = calc_envelope(df, period, pct)
+            sig = get_signal(df, pct)
+            if sig['signal'] == 'N/A':
+                continue
+
+            w52_high = float(s.tail(252).max())
+            w52_low = float(s.tail(252).min())
+            from_52h = (sig['close'] - w52_high) / w52_high * 100
+
+            change_1d = 0.0
+            if len(s) >= 2:
+                change_1d = (float(s.iloc[-1]) - float(s.iloc[-2])) / float(s.iloc[-2]) * 100
+
+            results.append({
+                'ticker': ticker,
+                'market': market,
+                'display_ticker': ticker.replace(m['suffix'], '') if m['suffix'] else ticker,
+                'display_name': get_stock_name(market, ticker),
+                'sector': get_sector(market, ticker),
+                'signal': sig['signal'],
+                'strength': sig['strength'],
+                'close': sig['close'],
+                'ma': sig['ma'],
+                'upper': sig['upper'],
+                'lower': sig['lower'],
+                'pct_from_ma': sig['pct_from_ma'],
+                'pct_from_lower': sig['pct_from_lower'],
+                'pct_from_upper': sig['pct_from_upper'],
+                'week52_high': round(w52_high, 2),
+                'week52_low': round(w52_low, 2),
+                'from_52w_high': round(from_52h, 2),
+                'change_1d': round(change_1d, 2),
+                'currency': m['currency'],
+            })
+        except Exception:
+            continue
+
+    return {'stocks': results, 'scanned': len(tickers), 'market': market}
+
+
+def filter_scan_results(results: list[dict], sig_filter: str = 'ALL') -> list[dict]:
+    sig_filter = (sig_filter or 'ALL').upper()
+    if sig_filter == 'BUY':
+        return [r for r in results if 'BUY' in r['signal']]
+    if sig_filter == 'SELL':
+        return [r for r in results if 'SELL' in r['signal']]
+    return results
+
+
+_SIGNAL_PRESET_MAP = {
+    'ALL': [],
+    'STRONG_BUY': ['STRONG_BUY'],
+    'BUY_SETUP': ['STRONG_BUY', 'BUY'],
+    'BUY_WATCH': ['WATCH_BUY'],
+    'BUY_ALL': ['STRONG_BUY', 'BUY', 'WATCH_BUY'],
+    'SELL_WATCH': ['WATCH_SELL'],
+    'SELL_ALERT': ['WATCH_SELL', 'SELL', 'STRONG_SELL'],
+    'STRONG_SELL': ['STRONG_SELL'],
+    'SELL_ALL': ['WATCH_SELL', 'SELL', 'STRONG_SELL'],
+    'NEUTRAL': ['NEUTRAL'],
+}
+
+
+def _to_float_or_none(value):
+    if value in (None, '', 'null'):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _stock_matches_group(stock: dict, group: dict) -> bool:
+    signals = group.get('signals') or _SIGNAL_PRESET_MAP.get((group.get('signal_mode') or 'ALL').upper(), [])
+    if signals and stock.get('signal') not in signals:
+        return False
+
+    min_strength = int(group.get('min_strength', 0) or 0)
+    if stock.get('strength', 0) < min_strength:
+        return False
+
+    max_pct_from_lower = _to_float_or_none(group.get('max_pct_from_lower'))
+    if max_pct_from_lower is not None and float(stock.get('pct_from_lower', 0)) > max_pct_from_lower:
+        return False
+
+    min_pct_from_lower = _to_float_or_none(group.get('min_pct_from_lower'))
+    if min_pct_from_lower is not None and float(stock.get('pct_from_lower', 0)) < min_pct_from_lower:
+        return False
+
+    max_pct_from_ma = _to_float_or_none(group.get('max_pct_from_ma'))
+    if max_pct_from_ma is not None and float(stock.get('pct_from_ma', 0)) > max_pct_from_ma:
+        return False
+
+    min_pct_from_ma = _to_float_or_none(group.get('min_pct_from_ma'))
+    if min_pct_from_ma is not None and float(stock.get('pct_from_ma', 0)) < min_pct_from_ma:
+        return False
+
+    min_pct_from_upper = _to_float_or_none(group.get('min_pct_from_upper'))
+    if min_pct_from_upper is not None and float(stock.get('pct_from_upper', 0)) < min_pct_from_upper:
+        return False
+
+    max_from_52w_high = _to_float_or_none(group.get('max_from_52w_high'))
+    if max_from_52w_high is not None and float(stock.get('from_52w_high', 0)) > max_from_52w_high:
+        return False
+
+    min_from_52w_high = _to_float_or_none(group.get('min_from_52w_high'))
+    if min_from_52w_high is not None and float(stock.get('from_52w_high', 0)) < min_from_52w_high:
+        return False
+
+    return True
+
+
+def _sort_group_results(results: list[dict], sort_by: str = 'pct_from_lower', sort_order: str = 'asc') -> list[dict]:
+    key_name = sort_by or 'pct_from_lower'
+    reverse = (sort_order or 'asc').lower() == 'desc'
+    return sorted(results, key=lambda item: float(item.get(key_name, 0) or 0), reverse=reverse)
+
+
 # ─── API 라우트 ───────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -298,76 +605,63 @@ def index_summary(market: str):
 # 스캐너
 @app.route('/api/scan/<market>')
 def scan(market: str):
-    m = MARKETS.get(market)
-    if not m:
-        return jsonify({"error": "unknown market"}), 404
-    period  = int(request.args.get('period', 20))
-    pct     = float(request.args.get('pct', 5.0))
+    period = int(request.args.get('period', 20))
+    pct = float(request.args.get('pct', 5.0))
     sig_filter = request.args.get('signal', 'ALL')
-    limit   = int(request.args.get('limit', 50))
+    limit = int(request.args.get('limit', 50))
 
-    tickers = get_all_tickers(market)[:60]
-    end   = datetime.now()
-    start = end - timedelta(days=120)
-
-    results = []
     try:
-        raw      = yf.download(tickers, start=start, end=end, auto_adjust=True, progress=False)
-        close_df = raw['Close'] if isinstance(raw.columns, pd.MultiIndex) else raw
-        for ticker in tickers:
-            try:
-                col = ticker if ticker in close_df.columns else None
-                if col is None:
-                    continue
-                s = close_df[col].dropna()
-                if len(s) < period+5:
-                    continue
-                df  = pd.DataFrame({'Close': s})
-                df  = calc_envelope(df, period, pct)
-                sig = get_signal(df, pct)
-                if sig['signal'] == 'N/A':
-                    continue
-
-                w52_high = float(s.tail(252).max())
-                w52_low  = float(s.tail(252).min())
-                from_52h = (sig['close'] - w52_high) / w52_high * 100
-
-                # 전일대비
-                chg = 0.0
-                if len(s) >= 2:
-                    chg = (float(s.iloc[-1]) - float(s.iloc[-2])) / float(s.iloc[-2]) * 100
-
-                results.append({
-                    "ticker": ticker,
-                    "display_ticker": ticker.replace(m['suffix'],'') if m['suffix'] else ticker,
-                    "sector": get_sector(market, ticker),
-                    "signal": sig['signal'],
-                    "strength": sig['strength'],
-                    "close":  sig['close'],
-                    "ma":     sig['ma'],
-                    "upper":  sig['upper'],
-                    "lower":  sig['lower'],
-                    "pct_from_ma":    sig['pct_from_ma'],
-                    "pct_from_lower": sig['pct_from_lower'],
-                    "pct_from_upper": sig['pct_from_upper'],
-                    "week52_high": round(w52_high, 2),
-                    "week52_low":  round(w52_low,  2),
-                    "from_52w_high": round(from_52h, 2),
-                    "change_1d": round(chg, 2),
-                    "currency": m['currency'],
-                })
-            except Exception:
-                continue
+        payload = run_market_scan(market, period, pct)
+    except ValueError:
+        return jsonify({"error": "unknown market"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    if sig_filter == 'BUY':
-        results = [r for r in results if 'BUY'  in r['signal']]
-    elif sig_filter == 'SELL':
-        results = [r for r in results if 'SELL' in r['signal']]
-
+    results = filter_scan_results(payload['stocks'], sig_filter)
     results.sort(key=lambda x: x['pct_from_lower'])
-    return jsonify({"stocks": results[:limit], "total": len(results), "scanned": len(tickers), "market": market})
+    return jsonify({"stocks": results[:limit], "total": len(results), "scanned": payload['scanned'], "market": market})
+
+
+@app.route('/api/watchlist/group_scan', methods=['POST'])
+def watchlist_group_scan():
+    data = request.get_json(force=True) or {}
+    market = data.get('market', 'US')
+    period = int(data.get('period', 20))
+    pct = float(data.get('pct', 5.0))
+    limit = int(data.get('limit', 8))
+
+    try:
+        payload = run_market_scan(market, period, pct)
+    except ValueError:
+        return jsonify({'error': 'unknown market'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    matched = [stock for stock in payload['stocks'] if _stock_matches_group(stock, data)]
+    sort_by = data.get('sort_by', 'pct_from_lower')
+    sort_order = data.get('sort_order', 'asc')
+    matched = _sort_group_results(matched, sort_by, sort_order)
+    limited = matched[:limit]
+
+    return jsonify({
+        'group': {
+            'id': data.get('id'),
+            'name': data.get('name', ''),
+            'market': market,
+            'period': period,
+            'pct': pct,
+            'signal_mode': data.get('signal_mode', 'ALL'),
+        },
+        'stocks': limited,
+        'matched': len(matched),
+        'scanned': payload['scanned'],
+        'updated_at': datetime.now().strftime('%H:%M:%S'),
+        'summary': {
+            'buy': sum(1 for item in limited if 'BUY' in item['signal']),
+            'sell': sum(1 for item in limited if 'SELL' in item['signal']),
+            'strong': sum(1 for item in limited if 'STRONG' in item['signal']),
+        },
+    })
 
 # 차트 데이터
 @app.route('/api/chart/<market>/<ticker>')
@@ -379,10 +673,15 @@ def chart_data(market: str, ticker: str):
     period = int(request.args.get('period', 20))
     pct    = float(request.args.get('pct', 5.0))
 
+    # 종목명/코드/티커를 yfinance용 풀 티커로 변환
+    full_ticker = resolve_ticker(market, ticker)
+    if not full_ticker:
+        return jsonify({"error":"티커를 해석할 수 없습니다"}), 400
+
     end   = datetime.now()
     start = end - timedelta(days=days + period*2)
     try:
-        df = yf.Ticker(ticker).history(start=start, end=end, auto_adjust=True)
+        df = yf.Ticker(full_ticker).history(start=start, end=end, auto_adjust=True)
         if df.empty:
             return jsonify({"error":"No data"}), 404
         df = df[['Open','High','Low','Close','Volume']].copy()
@@ -400,13 +699,15 @@ def chart_data(market: str, ticker: str):
                  "upper":  round(float(r['Upper']), 2),
                  "lower":  round(float(r['Lower']), 2),
                  } for dt, r in df.iterrows()]
-        return jsonify({"ticker": ticker, "market": market,
+        return jsonify({"ticker": full_ticker, "market": market,
                         "currency": m['currency'], "ohlc": ohlc, "signal": sig})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 # 백테스트
 @app.route('/api/backtest/<market>/<ticker>')
+@app.route('/api/backtest/<market>/', defaults={"ticker": ""})
+@app.route('/api/backtest/<market>', defaults={"ticker": ""})
 def backtest_route(market: str, ticker: str):
     m = MARKETS.get(market)
     if not m:
@@ -419,17 +720,108 @@ def backtest_route(market: str, ticker: str):
 
     end   = datetime.now()
     start = end - timedelta(days=days + period*2)
+
+    # 1) 티커가 없으면 전체 종목 백테스트
+    if not ticker or not ticker.strip():
+        return _backtest_all(market, m, start, end, days, period, pct, stop_loss, take_profit)
+
+    # 2) 종목명/코드/티커 해석
+    full_ticker = resolve_ticker(market, ticker)
+    if not full_ticker:
+        return jsonify({"error":"티커를 해석할 수 없습니다"}), 400
+
     try:
-        df = yf.Ticker(ticker).history(start=start, end=end, auto_adjust=True)
+        df = yf.Ticker(full_ticker).history(start=start, end=end, auto_adjust=True)
         if df.empty:
             return jsonify({"error":"No data"}), 404
         result = backtest_envelope(df[['Close']].copy(), period, pct, stop_loss, take_profit)
-        result.update({"ticker": ticker, "market": market, "currency": m['currency'],
+        result.update({"ticker": full_ticker, "market": market, "currency": m['currency'],
+                       "display_ticker": full_ticker.replace(m['suffix'],'') if m['suffix'] else full_ticker,
+                       "display_name": get_stock_name(market, full_ticker),
                        "params": {"period":period,"pct":pct,"stop_loss":stop_loss,
                                   "take_profit":take_profit,"days":days}})
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+def _backtest_all(market, m, start, end, days, period, pct, stop_loss, take_profit):
+    """선택한 시장의 전체 종목에 대해 백테스트하고 집계 결과 반환."""
+    tickers = get_all_tickers(market)
+    results = []
+    errors  = []
+    try:
+        raw = yf.download(tickers, start=start, end=end, auto_adjust=True, progress=False)
+        close_df = raw['Close'] if isinstance(raw.columns, pd.MultiIndex) else raw
+    except Exception as e:
+        return jsonify({"error": f"데이터 수집 실패: {e}"}), 500
+
+    for ticker in tickers:
+        try:
+            col = ticker if ticker in close_df.columns else None
+            if col is None:
+                continue
+            s = close_df[col].dropna()
+            if len(s) < period + 5:
+                continue
+            df = pd.DataFrame({'Close': s})
+            res = backtest_envelope(df, period, pct, stop_loss, take_profit)
+            if res['trade_count'] == 0:
+                continue
+            res['ticker'] = ticker
+            res['display_ticker'] = ticker.replace(m['suffix'], '') if m['suffix'] else ticker
+            res['display_name'] = get_stock_name(market, ticker)
+            res['sector'] = get_sector(market, ticker)
+            results.append(res)
+        except Exception as e:
+            errors.append({"ticker": ticker, "error": str(e)})
+
+    if not results:
+        return jsonify({"error": "백테스트 가능한 거래 내역이 없습니다", "errors": errors}), 404
+
+    total_trades = sum(r['trade_count'] for r in results)
+    total_wins   = sum(r['win_count']   for r in results)
+    avg_return   = float(np.mean([r['total_return'] for r in results]))
+    avg_mdd      = float(np.mean([r['mdd']          for r in results]))
+    avg_win_rate = float(np.mean([r['win_rate']     for r in results]))
+    avg_profit   = float(np.mean([r['avg_profit_pct'] for r in results if r['win_count'] > 0]) or 0)
+    avg_loss     = float(np.mean([r['avg_loss_pct']   for r in results if r['loss_count'] > 0]) or 0)
+
+    # 개별 종목 중 상위/하위 수익률
+    sorted_by_return = sorted(results, key=lambda x: x['total_return'], reverse=True)
+    top5 = sorted_by_return[:5]
+    bottom5 = sorted_by_return[-5:]
+
+    aggregated = {
+        "market": market,
+        "currency": m['currency'],
+        "mode": "all",
+        "ticker_count": len(results),
+        "total_trades": total_trades,
+        "total_wins": total_wins,
+        "total_losses": total_trades - total_wins,
+        "avg_return": round(avg_return, 2),
+        "avg_win_rate": round(avg_win_rate, 1),
+        "avg_mdd": round(avg_mdd, 2),
+        "avg_profit_pct": round(avg_profit, 2),
+        "avg_loss_pct": round(avg_loss, 2),
+        "params": {"period": period, "pct": pct, "stop_loss": stop_loss,
+                   "take_profit": take_profit, "days": days},
+        "top5": [{"ticker": r['ticker'], "display_ticker": r['display_ticker'],
+                  "display_name": r['display_name'], "sector": r['sector'],
+                  "total_return": r['total_return'], "trade_count": r['trade_count'],
+                  "win_rate": r['win_rate']} for r in top5],
+        "bottom5": [{"ticker": r['ticker'], "display_ticker": r['display_ticker'],
+                     "display_name": r['display_name'], "sector": r['sector'],
+                     "total_return": r['total_return'], "trade_count": r['trade_count'],
+                     "win_rate": r['win_rate']} for r in bottom5],
+        "all": [{"ticker": r['ticker'], "display_ticker": r['display_ticker'],
+                 "display_name": r['display_name'], "sector": r['sector'],
+                 "total_return": r['total_return'], "trade_count": r['trade_count'],
+                 "win_rate": r['win_rate'], "mdd": r['mdd']} for r in sorted_by_return],
+        "errors": errors[:10],
+    }
+    return jsonify(aggregated)
 
 # ── 워치리스트 API ────────────────────────────────────────────────────────
 
@@ -460,6 +852,7 @@ def wl_add():
     entry = {
         "key": key, "market": market, "ticker": full_ticker,
         "display_ticker": ticker,
+        "display_name": get_stock_name(market, full_ticker),
         "market_name": m.get('name', market),
         "currency": m.get('currency','USD'),
         "sector": get_sector(market, full_ticker),
@@ -528,21 +921,41 @@ def _read_json(filename: str) -> dict:
     except Exception:
         return {}
 
+def _mask_secret(s: str, show: int = 4) -> str:
+    """민감한 문자열의 앞뒤 일부만 노출하고 나머지는 마스킹"""
+    if not s or len(s) <= show * 2:
+        return '*' * len(s)
+    return s[:show] + '*' * (len(s) - show * 2) + s[-show:]
+
 @app.route('/api/account')
 def account_api():
-    """dashboard_data.json + runtime_payload.json + config.json 통합 반환"""
+    """dashboard_data.json + runtime_payload.json + config.json + 실제 계좌 요약 통합 반환"""
     dashboard = _read_json('dashboard_data.json')
     runtime   = _read_json('runtime_payload.json')
     cfg       = _read_json('config.json')
+
+    try:
+        client = BrokerClient(
+            base_url=cfg.get('base_url'),
+            api_key=cfg.get('api_key'),
+            api_secret=cfg.get('api_secret'),
+            account_seq=cfg.get('account_seq'),
+        )
+        live_account = client.get_account_summary()
+    except Exception as e:
+        live_account = {'mode': 'error', 'error': str(e)}
+
     return jsonify({
         "dashboard": dashboard,
         "runtime":   runtime,
         "config": {
-            "base_url":   cfg.get('base_url', ''),
-            "api_key":    cfg.get('api_key', ''),
-            "api_secret": cfg.get('api_secret', ''),
-            "mock_mode":  cfg.get('mock_mode', False),
-        }
+            "base_url":    cfg.get('base_url', ''),
+            "api_key":     _mask_secret(cfg.get('api_key', '')),
+            "api_secret":  _mask_secret(cfg.get('api_secret', '')),
+            "account_seq": cfg.get('account_seq', ''),
+            "mock_mode":   cfg.get('mock_mode', False),
+        },
+        "live_account": live_account,
     })
 
 @app.route('/api/save_config', methods=['POST'])
@@ -552,7 +965,9 @@ def save_config_api():
     path = os.path.join(BASE_DIR, 'config.json')
     try:
         existing = _read_json('config.json')
-        existing.update({k: data[k] for k in ('base_url','api_key','api_secret','mock_mode') if k in data})
+        existing.update({k: data[k] for k in ('base_url','api_key','api_secret','mock_mode','account_seq','account_no') if k in data})
+        if 'mock_mode' not in data and existing.get('api_key') and existing.get('api_secret'):
+            existing['mock_mode'] = False
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(existing, f, ensure_ascii=False, indent=2)
         return jsonify({"ok": True, "message": "설정이 저장되었습니다."})
