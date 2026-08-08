@@ -91,6 +91,8 @@
     .empty { padding: 60px 32px; text-align: center; color: var(--muted); }
     .loader { display: inline-block; width: 14px; height: 14px; border: 2px solid #334155; border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; margin-right: 6px; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .progress-bar { width: 100%; height: 6px; background: #334155; border-radius: 3px; overflow: hidden; margin-top: 8px; }
+    .progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s ease; }
     footer { padding: 24px 32px; color: var(--muted); font-size: 0.75rem; text-align: center; border-top: 1px solid #334155; }
   </style>
 </head>
@@ -121,6 +123,11 @@
     <label style="color:var(--muted);font-size:0.85rem"><input type="checkbox" id="autoRefresh" checked> 자동 갱신</label>
   </div>
 
+  <div style="padding: 0 32px 16px;">
+    <div class="status" id="progressText">스크리닝 준비 중...</div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
   <main id="signalGrid" class="grid">
     <div class="empty"><span class="loader"></span> 데이터를 불러오는 중입니다...</div>
   </main>
@@ -138,6 +145,9 @@
     const marketFilter = document.getElementById('marketFilter');
     const refreshBtn = document.getElementById('refreshBtn');
     const autoRefreshCheck = document.getElementById('autoRefresh');
+
+    const progressText = document.getElementById('progressText');
+    const progressFill = document.getElementById('progressFill');
 
     let ws;
     let lastData = { signals: [] };
@@ -159,6 +169,19 @@
       ws.onerror = (e) => { statusEl.textContent = 'WebSocket 오류'; };
     }
 
+    function updateProgress() {
+      const p = lastData.progress || { current: 0, total: 0, chunk: 0, total_chunks: 0 };
+      const pct = p.total > 0 ? Math.round((p.current / p.total) * 100) : 0;
+      progressFill.style.width = pct + '%';
+      if (lastData.full_cycle_done) {
+        progressText.textContent = `전체 종목 스크리닝 완료 (${p.total}개 종목)`;
+      } else if (p.total > 0) {
+        progressText.innerHTML = `<span class="loader"></span> 스크리닝 중... chunk ${p.chunk}/${p.total_chunks} (${p.current}/${p.total} 종목, ${pct}%)`;
+      } else {
+        progressText.textContent = '스크리닝 준비 중...';
+      }
+    }
+
     function render() {
       const strategy = strategyFilter.value;
       const market = marketFilter.value;
@@ -166,6 +189,7 @@
       if (strategy) signals = signals.filter(s => s.strategy === strategy);
       if (market) signals = signals.filter(s => s.market === market);
       statsEl.textContent = `전체 종목 ${lastData.universe_total || 0}개 | 필터링 ${lastData.universe_filtered || 0}개 | 신호 ${signals.length}개`;
+      updateProgress();
 
       if (!signals.length) {
         gridEl.innerHTML = '<div class="empty">조건에 맞는 종목이 없습니다.</div>';

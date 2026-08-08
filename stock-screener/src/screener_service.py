@@ -3,8 +3,7 @@ import json
 import asyncio
 import logging
 from datetime import datetime
-from typing import List, Dict, Optional
-from dataclasses import asdict
+from typing import List, Dict, Optional, Tuple
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -18,22 +17,32 @@ logger = logging.getLogger(__name__)
 
 
 class ScreenerService:
-    """실시간 조건 검색 서비스. 종목 데이터를 주기적으로 폴링하고 4대 기법 조건을 평가합니다."""
+    """실시간 조건 검색 서비스. 종목 데이터를 주기적으로 폴링하고 4대 기법 조건을 평가합니다.
 
-    def __init__(self, markets: Optional[List[str]] = None, poll_interval: int = 60):
+    Dashboard를 빨리 활성화하기 위해 전체 종목을 chunk 단위로 순환 처리합니다.
+    한 주기(poll)마다 하나의 chunk만 스크리닝하고, 완료 즉시 WebSocket으로 broadcast합니다.
+    """
+
+    def __init__(self, markets: Optional[List[str]] = None, poll_interval: int = 60, chunk_size: int = 50):
         self.markets = markets or ["KOSPI", "KOSDAQ", "NASDAQ"]
         self.poll_interval = poll_interval
+        self.chunk_size = chunk_size
         self.provider = MarketDataProvider()
         self.filter = ExclusionFilter()
         self.screener = StrategyScreener(min_history=240)
         self.universe: Dict[str, Dict] = {}
         self.filtered_universe: Dict[str, Dict] = {}
         self.signals: List[SignalResult] = []
+        self._signal_index: Dict[str, SignalResult] = {}
         self.last_run: Optional[datetime] = None
         self.is_running = False
         self.scheduler = AsyncIOScheduler()
         self._subscribers = set()
         self._lock = asyncio.Lock()
+        self._target_symbols_list: List[Tuple[str, str]] = []
+        self._chunk_index: int = 0
+        self._screening_progress: Dict = {"current": 0, "total": 0, "chunk": 0, "total_chunks": 0}
+        self._full_cycle_done: bool = False
 
     async def initialize(self):
         logger.info("유니버스 로드 중...")
@@ -45,24 +54,54 @@ class ScreenerService:
         self.filtered_universe = self.filter.filter_universe(self.universe)
         logger.info("필터링 후 종목 %d개", len(self.filtered_universe))
 
-    def _target_symbols(self) -> List[tuple]:
-        return [(sym, info["market"]) for sym, info in self.filtered_universe.items() if info["market"] in self.markets]
+        self._target_symbols_list = [
+            (sym, info["market"]) for sym, info in self.filtered_universe.items() if info["market"] in self.markets
+        ]
+        total = len(self._target_symbols_list)
+        self._screening_progress = {"current": 0, "total": total, "chunk": 0, "total_chunks": (total + self.chunk_size - 1) // self.chunk_size}
+
+    def _next_chunk(self) -> List[Tuple[str, str]]:
+        total = len(self._target_symbols_list)
+        if total == 0:
+            return []
+        chunks = (total + self.chunk_size - 1) // self.chunk_size
+        start = self._chunk_index * self.chunk_size
+        end = min(start + self.chunk_size, total)
+        chunk = self._target_symbols_list[start:end]
+        self._chunk_index = (self._chunk_index + 1) % chunks
+        if self._chunk_index == 0:
+            self._full_cycle_done = True
+        return chunk
 
     async def run_screen(self):
         async with self._lock:
             self.last_run = datetime.now()
-            symbols = self._target_symbols()
-            logger.info("스크리닝 시작: %d 종목", len(symbols))
-            data_list = await self.provider.fetch_all_async(symbols, days=240)
-            all_signals: List[SignalResult] = []
+            chunk = self._next_chunk()
+            if not chunk:
+                logger.warning("스크리닝 대상 종목이 없습니다.")
+                await self._broadcast()
+                return
+
+            self._screening_progress["chunk"] = self._chunk_index + 1
+            self._screening_progress["current"] = min(self._chunk_index * self.chunk_size + self.chunk_size, self._screening_progress["total"])
+            logger.info(
+                "스크리닝 chunk %d/%d: %d 종목",
+                self._screening_progress["chunk"],
+                self._screening_progress["total_chunks"],
+                len(chunk),
+            )
+
+            data_list = await self.provider.fetch_all_async(chunk, days=240, max_age_hours=24, max_workers=10, per_symbol_timeout=8)
             for data in data_list:
                 try:
-                    signals = self.screener.screen_all(data)
-                    all_signals.extend(signals)
+                    for signal in self.screener.screen_all(data):
+                        key = f"{data.symbol}_{signal.strategy}"
+                        self._signal_index[key] = signal
                 except Exception as e:
                     logger.debug("스크리너 오류 %s: %s", data.symbol, e)
-            self.signals = sorted(all_signals, key=lambda x: x.score, reverse=True)
-            logger.info("신호 %d개 감지", len(self.signals))
+
+            self.signals = sorted(self._signal_index.values(), key=lambda x: x.score, reverse=True)
+            logger.info("누적 신호 %d개 감지", len(self.signals))
             await self._broadcast()
 
     async def _broadcast(self):
@@ -93,9 +132,10 @@ class ScreenerService:
             trigger=IntervalTrigger(seconds=self.poll_interval),
             id="screen",
             replace_existing=True,
+            max_instances=1,
         )
         self.scheduler.start()
-        logger.info("스크리너 폴링 시작: %d초", self.poll_interval)
+        logger.info("스크리너 폴링 시작: %d초, chunk_size=%d", self.poll_interval, self.chunk_size)
 
     def stop(self):
         if not self.is_running:
@@ -108,6 +148,9 @@ class ScreenerService:
             "last_run": self.last_run.isoformat() if self.last_run else None,
             "universe_total": len(self.universe),
             "universe_filtered": len(self.filtered_universe),
+            "signal_count": len(self.signals),
+            "progress": self._screening_progress,
+            "full_cycle_done": self._full_cycle_done,
             "signals": [
                 {
                     "symbol": s.symbol,

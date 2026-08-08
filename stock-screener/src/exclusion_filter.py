@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 import re
 
 import pandas as pd
-from pykrx import stock as pykrx_stock
 
 logger = logging.getLogger(__name__)
 
@@ -69,26 +68,15 @@ class ExclusionFilter:
                 if "관리" in name or "정리매매" in upper or "투자경고" in upper or "투자위험" in upper or "상장폐지" in upper:
                     self.management.add(sym)
 
-            # 2. 초저유동성: 최근 20일 평균 거래대금 10억원 미만 (KRX) / 50만 USD 미만 (NASDAQ)
-            for sym, info in universe.items():
-                market = info.get("market", "")
-                if market in ("KOSPI", "KOSDAQ"):
-                    try:
-                        start = (datetime.now() - timedelta(days=30)).strftime("%Y%m%d")
-                        df = pykrx_stock.get_market_ohlcv_by_date(start, today, sym)
-                        if not df.empty:
-                            avg_amount = (df["종가"] * df["거래량"]).mean()
-                            if avg_amount < 1_000_000_000:  # 10억원
-                                self.low_liquidity.add(sym)
-                    except Exception:
-                        pass
+            # 2. 초저유동성: pykrx API가 불안정하여 현재는 이름 휴리스틱만 사용.
+            #    실제 운영 시에는 최근 20일 평균 거래대금 10억원 미만(KRX) / 50만 USD 미만(NASDAQ)으로 필터링 권장.
 
             # 3. 정리매매/관리종목: KRX 공시 데이터는 외부 API/CSV 필요. 여기선 휴리스틱으로 대체.
             # 실제 사용 시 DART 공시 OpenAPI 또는 KRX 상장폐지 현황 CSV 연동 권장.
 
             self.excluded = (
                 self.etfs | self.etns | self.preferred | self.spacs |
-                self.management | self.risky | self.low_liquidity
+                self.management | self.risky
             )
 
             self._save_cache("etfs", self.etfs)
@@ -97,7 +85,6 @@ class ExclusionFilter:
             self._save_cache("spacs", self.spacs)
             self._save_cache("management", self.management)
             self._save_cache("risky", self.risky)
-            self._save_cache("low_liquidity", self.low_liquidity)
             self._last_update = datetime.now()
         except Exception as e:
             logger.warning("제외 리스트 구성 실패: %s", e)
@@ -124,6 +111,4 @@ class ExclusionFilter:
             reasons.append("관리종목/정리매매")
         if symbol in self.risky:
             reasons.append("투자경고/위험")
-        if symbol in self.low_liquidity:
-            reasons.append("초저유동성")
         return reasons
