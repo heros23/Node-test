@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KOSPI/KOSDAQ/NASDAQ 4대 기법 실시간 검색기</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --buy: #22c55e;
+      --danger: #ef4444;
+    }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 24px 32px;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.5rem;
+    }
+    .status {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .controls {
+      padding: 16px 32px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    select, button, input {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    button:hover {
+      border-color: var(--accent);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+      padding: 8px 32px 32px;
+    }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 18px;
+      border: 1px solid #334155;
+      transition: transform .1s ease;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: var(--accent);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .symbol { font-size: 1.2rem; font-weight: 700; }
+    .market { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+    .strategy { font-size: 0.75rem; color: var(--accent); background: rgba(56,189,248,.1); padding: 2px 8px; border-radius: 12px; }
+    .name { color: var(--muted); font-size: 0.85rem; margin-top: 6px; }
+    .price { font-size: 1.4rem; font-weight: 700; margin-top: 12px; }
+    .change { font-size: 0.9rem; }
+    .up { color: var(--buy); }
+    .down { color: var(--danger); }
+    .details { margin-top: 12px; font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+    .badge { display: inline-block; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; background: #334155; margin: 2px 2px 0 0; }
+    .empty { padding: 60px 32px; text-align: center; color: var(--muted); }
+    .loader { display: inline-block; width: 14px; height: 14px; border: 2px solid #334155; border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .progress-bar { width: 100%; height: 6px; background: #334155; border-radius: 3px; overflow: hidden; margin-top: 8px; }
+    .progress-fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s ease; }
+    footer { padding: 24px 32px; color: var(--muted); font-size: 0.75rem; text-align: center; border-top: 1px solid #334155; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>KOSPI/KOSDAQ/NASDAQ 4대 기법 실시간 검색기</h1>
+      <div class="status" id="status">연결 중...</div>
+    </div>
+    <div class="status" id="stats">종목 0개 | 신호 0개</div>
+  </header>
+
+  <div class="controls">
+    <select id="strategyFilter">
+      <option value="">전체 기법</option>
+      <option value="256 기법">256 기법</option>
+      <option value="밥그릇 3번">밥그릇 3번</option>
+      <option value="공구리 기법">공구리 기법</option>
+      <option value="오돌이 기법">오돌이 기법</option>
+    </select>
+    <select id="marketFilter">
+      <option value="">전체 시장</option>
+      <option value="KOSPI">KOSPI</option>
+      <option value="KOSDAQ">KOSDAQ</option>
+      <option value="NASDAQ">NASDAQ</option>
+    </select>
+    <button id="refreshBtn">수동 새로고침</button>
+    <label style="color:var(--muted);font-size:0.85rem"><input type="checkbox" id="autoRefresh" checked> 자동 갱신</label>
+  </div>
+
+  <div style="padding: 0 32px 16px;">
+    <div class="status" id="progressText">스크리닝 준비 중...</div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <main id="signalGrid" class="grid">
+    <div class="empty"><span class="loader"></span> 데이터를 불러오는 중입니다...</div>
+  </main>
+
+  <footer>
+    <p>제외 종목: 관리종목, 투자경고/위험, 우선주, ETF, ETN, 정리매매, 스팩(SPAC), 초저유동성종목</p>
+    <p>본 시스템은 투자 권유가 아니며 참고용입니다. 무료 데이터 사용으로 지연 또는 누락이 있을 수 있습니다.</p>
+  </footer>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const statsEl = document.getElementById('stats');
+    const gridEl = document.getElementById('signalGrid');
+    const strategyFilter = document.getElementById('strategyFilter');
+    const marketFilter = document.getElementById('marketFilter');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const autoRefreshCheck = document.getElementById('autoRefresh');
+
+    const progressText = document.getElementById('progressText');
+    const progressFill = document.getElementById('progressFill');
+
+    let ws;
+    let lastData = { signals: [] };
+
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/ws`);
+      ws.onopen = () => { statusEl.textContent = '실시간 연결됨'; };
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.error) { statusEl.textContent = '오류: ' + data.error; return; }
+        lastData = data;
+        render();
+      };
+      ws.onclose = () => {
+        statusEl.textContent = '연결 끊김, 재연결 시도...';
+        if (autoRefreshCheck.checked) setTimeout(connect, 3000);
+      };
+      ws.onerror = (e) => { statusEl.textContent = 'WebSocket 오류'; };
+    }
+
+    function updateProgress() {
+      const p = lastData.progress || { current: 0, total: 0, chunk: 0, total_chunks: 0 };
+      const pct = p.total > 0 ? Math.round((p.current / p.total) * 100) : 0;
+      progressFill.style.width = pct + '%';
+      if (lastData.full_cycle_done) {
+        progressText.textContent = `전체 종목 스크리닝 완료 (${p.total}개 종목)`;
+      } else if (p.total > 0) {
+        progressText.innerHTML = `<span class="loader"></span> 스크리닝 중... chunk ${p.chunk}/${p.total_chunks} (${p.current}/${p.total} 종목, ${pct}%)`;
+      } else {
+        progressText.textContent = '스크리닝 준비 중...';
+      }
+    }
+
+    function render() {
+      const strategy = strategyFilter.value;
+      const market = marketFilter.value;
+      let signals = lastData.signals || [];
+      if (strategy) signals = signals.filter(s => s.strategy === strategy);
+      if (market) signals = signals.filter(s => s.market === market);
+      statsEl.textContent = `전체 종목 ${lastData.universe_total || 0}개 | 필터링 ${lastData.universe_filtered || 0}개 | 신호 ${signals.length}개`;
+      updateProgress();
+
+      if (!signals.length) {
+        gridEl.innerHTML = '<div class="empty">조건에 맞는 종목이 없습니다.</div>';
+        return;
+      }
+      gridEl.innerHTML = signals.map(s => {
+        const changeClass = s.change_pct > 0 ? 'up' : (s.change_pct < 0 ? 'down' : '');
+        const changeSign = s.change_pct > 0 ? '+' : '';
+        const details = Object.entries(s.details || {}).map(([k, v]) => `<span class="badge">${k}: ${v}</span>`).join(' ');
+        return `
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="symbol">${s.symbol}</div>
+                <div class="market">${s.market}</div>
+                <div class="name">${s.name}</div>
+              </div>
+              <div class="strategy">${s.strategy}</div>
+            </div>
+            <div class="price">${Number(s.close).toLocaleString(undefined, {maximumFractionDigits: 2})}</div>
+            <div class="change ${changeClass}">${changeSign}${s.change_pct.toFixed(2)}%</div>
+            <div class="details">${details}<br><span class="badge">거래량: ${Number(s.volume).toLocaleString()}</span> <span class="badge">score: ${s.score}</span></div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    refreshBtn.addEventListener('click', () => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({action: 'refresh'}));
+    });
+    strategyFilter.addEventListener('change', render);
+    marketFilter.addEventListener('change', render);
+    autoRefreshCheck.addEventListener('change', () => {
+      if (autoRefreshCheck.checked && (!ws || ws.readyState !== WebSocket.OPEN)) connect();
+    });
+
+    connect();
+  </script>
+</body>
+</html>

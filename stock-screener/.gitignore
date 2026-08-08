@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.venv/
+venv/
+.env
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Data/cache generated at runtime
+data/
